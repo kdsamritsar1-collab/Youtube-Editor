@@ -16,56 +16,77 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
 genai.configure(api_key=GEMINI_API_KEY)
 
-st.set_page_config(page_title="Ruhani SEO & Thumbnail Lab", layout="wide")
-st.title("🧐 Ruhani SEO & Thumbnail Designer Lab")
+st.set_page_config(page_title="Ruhani Design Lab", layout="wide")
+st.title("🎨 Ruhani YouTube Design & SEO Lab")
 
-v_url = st.text_input("YouTube लिंक डालें:")
+v_url = st.text_input("अपना वीडियो लिंक डालें:")
 
-if st.button("Run Deep Audit"):
+# Sidebar for Font & Style Controls
+with st.sidebar:
+    st.header("🖌️ Text Styling")
+    text_color = st.color_picker("Text Color", "#FFFFFF")
+    font_size = st.slider("Font Size", 20, 200, 80)
+    # आप GitHub में 'fonts' नाम का फोल्डर बनाकर उसमें .ttf फाइलें रख सकते हैं
+    uploaded_font = st.file_uploader("Custom Font (.ttf) अपलोड करें (Optional)", type="ttf")
+
+if st.button("Start Deep Audit & Design"):
     if "v=" in v_url:
         v_id = v_url.split("v=")[1].split("&")[0]
         
-        with st.status("Analyzing SEO & Visuals...", expanded=True):
-            # 1. Fetch Data
+        with st.status("Fetching SEO & Visual Data..."):
             res = youtube.videos().list(part="snippet,statistics", id=v_id).execute()
-            snippet = res['items'][0]['snippet']
-            stats = res['items'][0]['statistics']
-            thumb_url = snippet['thumbnails'].get('maxres', snippet['thumbnails']['high'])['url']
+            item = res['items'][0]
+            thumb_url = item['snippet']['thumbnails'].get('maxres', item['snippet']['thumbnails']['high'])['url']
             
-            # 2. Vision Analysis
-            img_response = requests.get(thumb_url)
-            img_data = img_response.content
+            img_data = requests.get(thumb_url).content
             
+            # Gemini Vision Analysis
             active_model = get_active_gemini_model()
             model = genai.GenerativeModel(active_model)
-            prompt = config_ai.get_audit_prompt(snippet['title'], snippet.get('tags', []), snippet['description'], stats.get('viewCount', 0), "Ruhani Jot")
+            prompt = config_ai.get_audit_prompt(item['snippet']['title'], item['snippet'].get('tags', []), item['snippet']['description'], item['statistics'].get('viewCount', 0), "Ruhani Jot")
             
             response = model.generate_content([prompt, {"mime_type": "image/jpeg", "data": img_data}])
             
-            # Save data in session for the Overlay Tool
-            st.session_state['current_img'] = Image.open(io.BytesIO(img_data))
+            st.session_state['img'] = Image.open(io.BytesIO(img_data))
             st.session_state['report'] = response.text
-            st.session_state['v_id'] = v_id
 
 if 'report' in st.session_state:
     st.divider()
-    col1, col2 = st.columns([1, 2])
+    col1, col2 = st.columns([1.2, 1])
     
     with col1:
-        st.image(st.session_state['current_img'], caption="Original Thumbnail", use_container_width=True)
-        st.markdown("### 🛠️ Thumbnail Overlay Tool")
-        overlay_text = st.text_input("थंबनेल पर नया टेक्स्ट लिख कर देखें:", "Best Gurbani 2026")
+        st.markdown("### 🖼️ Thumbnail Editor")
+        overlay_text = st.text_area("थंबनेल टेक्स्ट (हिंदी/पंजाबी में भी लिख सकते हैं):", "ਨਵਾਂ ਕੀਰਤਨ 2026")
         
-        if st.button("Apply Overlay Preview"):
-            img = st.session_state['current_img'].copy()
-            draw = ImageDraw.Draw(img)
-            # बेसिक फॉन्ट सेटअप (Streamlit Cloud पर डिफॉल्ट फॉन्ट लोड होता है)
-            draw.text((50, 50), overlay_text, fill="white", stroke_fill="black", stroke_width=2)
-            st.image(img, caption="New Concept Preview", use_container_width=True)
-            st.info("यह सिर्फ एक प्रीव्यू है ताकि आप डिज़ाइन का अंदाज़ा लगा सकें।")
+        # Position Controls
+        pos_x = st.slider("Horizontal Position (X)", 0, st.session_state['img'].width, 50)
+        pos_y = st.slider("Vertical Position (Y)", 0, st.session_state['img'].height, 50)
+
+        img_preview = st.session_state['img'].copy()
+        draw = ImageDraw.Draw(img_preview)
+        
+        # Font Loading Logic
+        try:
+            if uploaded_font:
+                font = ImageFont.truetype(uploaded_font, font_size)
+            else:
+                font = ImageFont.load_default()
+        except:
+            font = ImageFont.load_default()
+
+        # Text Overlay with Shadow for readability
+        draw.text((pos_x+2, pos_y+2), overlay_text, fill="black", font=font) # Shadow
+        draw.text((pos_x, pos_y), overlay_text, fill=text_color, font=font)
+        
+        st.image(img_preview, use_container_width=True)
+        
+        # Download the new design
+        buf = io.BytesIO()
+        img_preview.save(buf, format="PNG")
+        st.download_button("Download New Concept", buf.getvalue(), "new_thumbnail.png", "image/png")
 
     with col2:
         st.markdown(st.session_state['report'])
 
 st.divider()
-st.caption("Developed for @ruhanijot | SEO + Vision + Design Tool")
+st.caption("Custom Font Support Enabled | Powered by Ruhani Jot Tech Stack")
